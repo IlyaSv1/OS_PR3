@@ -1,0 +1,17 @@
+D:\Операционные системы\ChatApplication\ChatApplication\bin\Debug\net8.0\ChatApplication.exe
+D:\Операционные системы\ChatApplication\ChatApplication\bin\Debug\net8.0\ChatApplication.deps.json
+D:\Операционные системы\ChatApplication\ChatApplication\bin\Debug\net8.0\ChatApplication.runtimeconfig.json
+D:\Операционные системы\ChatApplication\ChatApplication\bin\Debug\net8.0\ChatApplication.dll
+D:\Операционные системы\ChatApplication\ChatApplication\bin\Debug\net8.0\ChatApplication.pdb
+D:\Операционные системы\ChatApplication\ChatApplication\bin\Debug\net8.0\Newtonsoft.Json.dll
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\ChatApplication.csproj.AssemblyReference.cache
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\ChatApplication.GeneratedMSBuildEditorConfig.editorconfig
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\ChatApplication.AssemblyInfoInputs.cache
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\ChatApplication.AssemblyInfo.cs
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\ChatApplication.csproj.CoreCompileInputs.cache
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\ChatAppl.565FB39C.Up2Date
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\ChatApplication.dll
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\refint\ChatApplication.dll
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\ChatApplication.pdb
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\ChatApplication.genruntimeconfig.cache
+D:\Операционные системы\ChatApplication\ChatApplication\obj\Debug\net8.0\ref\ChatApplication.dll

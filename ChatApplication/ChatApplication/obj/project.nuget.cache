@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "dgSpecHash": "5UP+SeEBLaLIrTuJFlHS89KKbuW+sGQyQD2JgQSUB35seR6vzU3nQ2/UC48U89MD6lqYCQ5cq8oAXExJZ2HcrA==",
+  "success": true,
+  "projectFilePath": "D:\\Операционные системы\\ChatApplication\\ChatApplication\\ChatApplication.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\IlyaS\\.nuget\\packages\\newtonsoft.json\\8.0.3\\newtonsoft.json.8.0.3.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1903",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "У пакета \"Newtonsoft.Json\" 8.0.3 есть известная уязвимость https://github.com/advisories/GHSA-5crp-9r3c-p9vr (уровень серьезности: высокий уровень)",
+      "libraryId": "Newtonsoft.Json",
+      "targetGraphs": [
+        "net8.0"
+      ]
+    },
+    {
+      "code": "NU1701",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "Пакет \"Newtonsoft.Json 8.0.3\" был восстановлен с помощью \".NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1\", а не целевой платформы проекта \"net8.0\". Этот пакет может быть не полностью совместим с вашим проектом.",
+      "libraryId": "Newtonsoft.Json",
+      "targetGraphs": [
+        "net8.0"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "ChatApplication/1.0.0": {
+        "dependencies": {
+          "Newtonsoft.Json": "8.0.3"
+        },
+        "runtime": {
+          "ChatApplication.dll": {}
+        }
+      },
+      "Newtonsoft.Json/8.0.3": {
+        "runtime": {
+          "lib/net45/Newtonsoft.Json.dll": {
+            "assemblyVersion": "8.0.0.0",
+            "fileVersion": "8.0.3.19514"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "ChatApplication/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Newtonsoft.Json/8.0.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-KGsYQdS2zLH+H8x2cZaSI7e+YZ4SFIbyy1YJQYl6GYBWjf5o4H1A68nxyq+WTyVSOJQ4GqS/DiPE+UseUizgMg==",
+      "path": "newtonsoft.json/8.0.3",
+      "hashPath": "newtonsoft.json.8.0.3.nupkg.sha512"
+    }
+  }
+}
