@@ -55,6 +55,8 @@ class Client
         }
     }
 
+
+
     private static void ReceiveMessages(string serverIp, int tcpPort)
     {
         try
@@ -66,7 +68,7 @@ class Client
             while (true)
             {
                 int bytesRead = stream.Read(buffer, 0, buffer.Length);
-                if (bytesRead == 0) break;
+                if (bytesRead == 0) break; // Если сервер закрыл соединение
 
                 string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                 string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
@@ -79,6 +81,7 @@ class Client
             Console.WriteLine("Ошибка при получении сообщений.");
         }
     }
+
 
     private static void SendUdpPing(string serverIp, int udpPort)
     {
@@ -97,9 +100,11 @@ class Client
                 Logger.Log($"Ошибка UDP клиента: {ex.Message}");
             }
 
-            Thread.Sleep(10000);
+            Thread.Sleep(1000000);
         }
     }
+
+
 
     private static Config LoadConfig(string filePath)
     {
@@ -122,11 +127,4 @@ class Client
 
         return new Config(); // Возврат значений по умолчанию
     }
-}
-
-class Config
-{
-    public string ServerIp { get; set; }
-    public int? TcpPort { get; set; }
-    public int? UdpPort { get; set; }
 }

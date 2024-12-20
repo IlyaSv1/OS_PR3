@@ -13,8 +13,11 @@ class Server
 
     public static void Start()
     {
-        int tcpPort = 12345;
-        int udpPort = 12346;
+        var config = LoadConfig("config.json");
+
+        string serverIp = config.ServerIp ?? "127.0.0.1";
+        int tcpPort = config.TcpPort ?? 12345;
+        int udpPort = config.UdpPort ?? 12346;
 
         Console.WriteLine($"Запуск TCP сервера на порту {tcpPort}...");
         Console.WriteLine($"Запуск UDP сервера на порту {udpPort}...");
@@ -109,8 +112,9 @@ class Server
                     if (bytesRead == 0) break; // Клиент отключился
 
                     string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                    Console.WriteLine($"[TCP] Получено сообщение: {message}");
-                    Logger.Log($"[TCP] Получено сообщение: {message}");
+                    string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                    Console.WriteLine($"[{timestamp}] [TCP] Получено сообщение: {message}");
+                    Logger.Log($"[{timestamp}] [TCP] Получено сообщение: {message}");
 
                     // Отправка сообщения всем клиентам
                     BroadcastMessage(message, client);
@@ -135,6 +139,7 @@ class Server
         }
     }
 
+
     private static void BroadcastMessage(string message, TcpClient sender)
     {
         byte[] data = Encoding.UTF8.GetBytes(message);
@@ -147,8 +152,16 @@ class Server
                 {
                     try
                     {
-                        NetworkStream stream = client.GetStream();
-                        stream.Write(data, 0, data.Length);
+                        // Проверяем, подключен ли клиент перед отправкой сообщения
+                        if (client.Connected)
+                        {
+                            NetworkStream stream = client.GetStream();
+                            stream.Write(data, 0, data.Length);
+                        }
+                        else
+                        {
+                            Logger.Log("Не удается отправить сообщение. Клиент не подключен.");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -159,6 +172,10 @@ class Server
         }
     }
 
+
+
+    private static HashSet<IPEndPoint> receivedUdpMessages = new HashSet<IPEndPoint>();
+
     private static void ReceiveUdpMessages(UdpClient udpServer)
     {
         while (isRunning)
@@ -167,13 +184,15 @@ class Server
             {
                 IPEndPoint remoteEP = null;
                 byte[] receivedData = udpServer.Receive(ref remoteEP);
-                string message = Encoding.UTF8.GetString(receivedData);
-                Console.WriteLine($"[UDP] Получено сообщение от {remoteEP}: {message}");
-                Logger.Log($"[UDP] Получено сообщение от {remoteEP}: {message}");
 
-                string response = "Принято!";
-                byte[] responseData = Encoding.UTF8.GetBytes(response);
-                udpServer.Send(responseData, responseData.Length, remoteEP);
+                // Проверяем, пришло ли сообщение с того же адреса и порта
+                if (!receivedUdpMessages.Contains(remoteEP))
+                {
+                    receivedUdpMessages.Add(remoteEP);
+                    string message = Encoding.UTF8.GetString(receivedData);
+                    Console.WriteLine($"[UDP] Получено сообщение от {remoteEP}: {message}");
+                    Logger.Log($"[UDP] Получено сообщение от {remoteEP}: {message}");
+                }
             }
             catch (SocketException ex) when (!isRunning)
             {
@@ -186,4 +205,34 @@ class Server
             }
         }
     }
+
+
+    private static Config LoadConfig(string filePath)
+    {
+        try
+        {
+            if (System.IO.File.Exists(filePath))
+            {
+                string json = System.IO.File.ReadAllText(filePath);
+                return System.Text.Json.JsonSerializer.Deserialize<Config>(json);
+            }
+            else
+            {
+                Logger.Log("Файл конфигурации не найден. Используются значения по умолчанию.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Ошибка чтения конфигурации: {ex.Message}");
+        }
+
+        return new Config(); // Возврат значений по умолчанию
+    }
+}
+
+class Config
+{
+    public string ServerIp { get; set; }
+    public int? TcpPort { get; set; }
+    public int? UdpPort { get; set; }
 }
