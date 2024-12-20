@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -6,6 +7,9 @@ using System.Threading;
 
 class Server
 {
+    private static List<TcpClient> connectedClients = new List<TcpClient>();
+    private static readonly object clientListLock = new object();
+
     public static void Start()
     {
         int tcpPort = 12345;
@@ -36,6 +40,10 @@ class Server
             try
             {
                 TcpClient client = tcpListener.AcceptTcpClient();
+                lock (clientListLock)
+                {
+                    connectedClients.Add(client);
+                }
                 new Thread(() => HandleTcpClient(client)) { IsBackground = true }.Start();
             }
             catch (Exception ex)
@@ -51,15 +59,19 @@ class Server
         {
             using NetworkStream stream = client.GetStream();
             byte[] buffer = new byte[1024];
-            int bytesRead = stream.Read(buffer, 0, buffer.Length);
-            string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
-            Console.WriteLine($"[TCP] Получено сообщение: {message}");
-            Logger.Log($"[TCP] Получено сообщение: {message}");
+            while (true)
+            {
+                int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                if (bytesRead == 0) break; // Клиент отключился
 
-            string response = "Сообщение получено!";
-            byte[] responseData = Encoding.UTF8.GetBytes(response);
-            stream.Write(responseData, 0, responseData.Length);
+                string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                Console.WriteLine($"[TCP] Получено сообщение: {message}");
+                Logger.Log($"[TCP] Получено сообщение: {message}");
+
+                // Отправка сообщения всем клиентам
+                BroadcastMessage(message, client);
+            }
         }
         catch (Exception ex)
         {
@@ -67,7 +79,35 @@ class Server
         }
         finally
         {
+            lock (clientListLock)
+            {
+                connectedClients.Remove(client);
+            }
             client.Close();
+        }
+    }
+
+    private static void BroadcastMessage(string message, TcpClient sender)
+    {
+        byte[] data = Encoding.UTF8.GetBytes(message);
+
+        lock (clientListLock)
+        {
+            foreach (var client in connectedClients)
+            {
+                if (client != sender)
+                {
+                    try
+                    {
+                        NetworkStream stream = client.GetStream();
+                        stream.Write(data, 0, data.Length);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"Ошибка отправки сообщения клиенту: {ex.Message}");
+                    }
+                }
+            }
         }
     }
 
