@@ -9,6 +9,7 @@ class Server
 {
     private static List<TcpClient> connectedClients = new List<TcpClient>();
     private static readonly object clientListLock = new object();
+    private static bool isRunning = true;
 
     public static void Start()
     {
@@ -25,26 +26,66 @@ class Server
         Logger.Log($"TCP сервер запущен на порту {tcpPort}");
         Logger.Log($"UDP сервер запущен на порту {udpPort}");
 
+        // Обработчик завершения работы
+        Console.CancelKeyPress += (sender, e) =>
+        {
+            Console.WriteLine("\nЗавершение работы сервера...");
+            Logger.Log("Сервер завершает работу...");
+            isRunning = false;
+
+            // Остановить серверы
+            tcpListener.Stop();
+            udpServer.Close();
+
+            lock (clientListLock)
+            {
+                foreach (var client in connectedClients)
+                {
+                    client.Close();
+                }
+                connectedClients.Clear();
+            }
+
+            e.Cancel = true;
+        };
+
         // Запуск потоков для обработки TCP и UDP
         new Thread(() => AcceptTcpClients(tcpListener)) { IsBackground = true }.Start();
         new Thread(() => ReceiveUdpMessages(udpServer)) { IsBackground = true }.Start();
 
         Console.WriteLine("Серверы запущены. Нажмите Ctrl+C для завершения.");
-        Thread.Sleep(Timeout.Infinite);
+
+        while (isRunning)
+        {
+            Thread.Sleep(500);
+        }
+
+        Logger.Log("Сервер завершил работу.");
+        Console.WriteLine("Сервер завершил работу.");
     }
 
     private static void AcceptTcpClients(TcpListener tcpListener)
     {
-        while (true)
+        while (isRunning)
         {
             try
             {
+                if (!tcpListener.Pending())
+                {
+                    Thread.Sleep(100);
+                    continue;
+                }
+
                 TcpClient client = tcpListener.AcceptTcpClient();
                 lock (clientListLock)
                 {
                     connectedClients.Add(client);
                 }
                 new Thread(() => HandleTcpClient(client)) { IsBackground = true }.Start();
+            }
+            catch (SocketException ex) when (!isRunning)
+            {
+                Logger.Log("TCP сервер остановлен.");
             }
             catch (Exception ex)
             {
@@ -60,17 +101,24 @@ class Server
             using NetworkStream stream = client.GetStream();
             byte[] buffer = new byte[1024];
 
-            while (true)
+            while (isRunning)
             {
-                int bytesRead = stream.Read(buffer, 0, buffer.Length);
-                if (bytesRead == 0) break; // Клиент отключился
+                if (stream.DataAvailable)
+                {
+                    int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                    if (bytesRead == 0) break; // Клиент отключился
 
-                string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                Console.WriteLine($"[TCP] Получено сообщение: {message}");
-                Logger.Log($"[TCP] Получено сообщение: {message}");
+                    string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                    Console.WriteLine($"[TCP] Получено сообщение: {message}");
+                    Logger.Log($"[TCP] Получено сообщение: {message}");
 
-                // Отправка сообщения всем клиентам
-                BroadcastMessage(message, client);
+                    // Отправка сообщения всем клиентам
+                    BroadcastMessage(message, client);
+                }
+                else
+                {
+                    Thread.Sleep(50);
+                }
             }
         }
         catch (Exception ex)
@@ -113,7 +161,7 @@ class Server
 
     private static void ReceiveUdpMessages(UdpClient udpServer)
     {
-        while (true)
+        while (isRunning)
         {
             try
             {
@@ -126,6 +174,11 @@ class Server
                 string response = "Принято!";
                 byte[] responseData = Encoding.UTF8.GetBytes(response);
                 udpServer.Send(responseData, responseData.Length, remoteEP);
+            }
+            catch (SocketException ex) when (!isRunning)
+            {
+                // Исключение ожидаемо при остановке сервера
+                Logger.Log("UDP сервер остановлен.");
             }
             catch (Exception ex)
             {
