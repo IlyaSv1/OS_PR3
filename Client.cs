@@ -1,26 +1,25 @@
 ﻿using System;
+using System.IO;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 
 class Client
 {
     public static void Start()
     {
-        Console.WriteLine("Введите IP сервера (по умолчанию 127.0.0.1):");
-        string serverIp = Console.ReadLine();
-        if (string.IsNullOrWhiteSpace(serverIp)) serverIp = "127.0.0.1";
+        var config = LoadConfig("config.json");
 
-        Console.WriteLine("Введите порт TCP сервера (по умолчанию 12345):");
-        if (!int.TryParse(Console.ReadLine(), out int tcpPort)) tcpPort = 12345;
+        string serverIp = config.ServerIp ?? "127.0.0.1";
+        int tcpPort = config.TcpPort ?? 12345;
+        int udpPort = config.UdpPort ?? 12346;
 
-        Console.WriteLine("Введите порт UDP сервера (по умолчанию 12346):");
-        if (!int.TryParse(Console.ReadLine(), out int udpPort)) udpPort = 12346;
+        Console.WriteLine("Введите сообщение для отправки (для выхода введите 'exit'):");
 
         // Запуск UDP пинга в фоновом потоке
         new Thread(() => SendUdpPing(serverIp, udpPort)) { IsBackground = true }.Start();
 
-        Console.WriteLine("Введите сообщение для отправки (для выхода введите 'exit'):");
         while (true)
         {
             string message = Console.ReadLine();
@@ -72,4 +71,33 @@ class Client
             Thread.Sleep(1000000);
         }
     }
+
+    private static Config LoadConfig(string filePath)
+    {
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                string json = File.ReadAllText(filePath);
+                return JsonSerializer.Deserialize<Config>(json);
+            }
+            else
+            {
+                Logger.Log("Файл конфигурации не найден. Используются значения по умолчанию.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Ошибка чтения конфигурации: {ex.Message}");
+        }
+
+        return new Config(); // Возврат значений по умолчанию
+    }
+}
+
+class Config
+{
+    public string ServerIp { get; set; }
+    public int? TcpPort { get; set; }
+    public int? UdpPort { get; set; }
 }
