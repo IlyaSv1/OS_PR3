@@ -17,7 +17,8 @@ class Client
 
         Console.WriteLine("Введите сообщение для отправки (для выхода введите 'exit'):");
 
-        // Запуск UDP пинга в фоновом потоке
+        // Запуск потоков для получения сообщений и отправки UDP пинга
+        new Thread(() => ReceiveMessages(serverIp, tcpPort)) { IsBackground = true }.Start();
         new Thread(() => SendUdpPing(serverIp, udpPort)) { IsBackground = true }.Start();
 
         while (true)
@@ -42,12 +43,40 @@ class Client
             byte[] response = new byte[1024];
             int bytesRead = stream.Read(response, 0, response.Length);
             string responseMessage = Encoding.UTF8.GetString(response, 0, bytesRead);
-            Console.WriteLine($"[TCP] Ответ от сервера: {responseMessage}");
+
+            string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            Console.WriteLine($"[{timestamp}] Вы отправили: {message}");
+            Console.WriteLine($"[{timestamp}] Ответ от сервера: {responseMessage}");
         }
         catch (Exception ex)
         {
             Logger.Log($"Ошибка TCP клиента: {ex.Message}");
             Console.WriteLine("Ошибка TCP клиента.");
+        }
+    }
+
+    private static void ReceiveMessages(string serverIp, int tcpPort)
+    {
+        try
+        {
+            using var client = new TcpClient(serverIp, tcpPort);
+            NetworkStream stream = client.GetStream();
+            byte[] buffer = new byte[1024];
+
+            while (true)
+            {
+                int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                if (bytesRead == 0) break;
+
+                string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                Console.WriteLine($"[{timestamp}] Новое сообщение: {message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Ошибка при получении сообщений: {ex.Message}");
+            Console.WriteLine("Ошибка при получении сообщений.");
         }
     }
 
@@ -68,7 +97,7 @@ class Client
                 Logger.Log($"Ошибка UDP клиента: {ex.Message}");
             }
 
-            Thread.Sleep(1000000);
+            Thread.Sleep(10000);
         }
     }
 
