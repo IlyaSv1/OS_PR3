@@ -18,13 +18,27 @@ class Server
 
     public static void Start()
     {
-        var config = LoadConfig("config.json");
+        // ================= ВВОД НАСТРОЕК =================
 
-        int tcpPort = config.TcpPort ?? 12345;
-        int udpPort = config.UdpPort ?? 12346;
+        Console.Write("Введите IP сервера (Enter = 127.0.0.1): ");
+        string ipInput = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(ipInput))
+            ipInput = "127.0.0.1";
 
-        TcpListener tcpListener = new TcpListener(IPAddress.Any, tcpPort);
-        udpServer = new UdpClient(udpPort);
+        IPAddress ipAddress = IPAddress.Parse(ipInput);
+
+        Console.Write("Введите TCP порт (Enter = 12345): ");
+        string tcpInput = Console.ReadLine();
+        int tcpPort = string.IsNullOrWhiteSpace(tcpInput) ? 12345 : int.Parse(tcpInput);
+
+        Console.Write("Введите UDP порт (Enter = 12346): ");
+        string udpInput = Console.ReadLine();
+        int udpPort = string.IsNullOrWhiteSpace(udpInput) ? 12346 : int.Parse(udpInput);
+
+        // ================= СОЗДАНИЕ СЕРВЕРА =================
+
+        TcpListener tcpListener = new TcpListener(ipAddress, tcpPort);
+        udpServer = new UdpClient(new IPEndPoint(ipAddress, udpPort));
 
         udpServer.Client.IOControl(
             (IOControlCode)0x9800000C,
@@ -34,8 +48,10 @@ class Server
 
         tcpListener.Start();
 
-        Logger.Log($"TCP сервер запущен на порту {tcpPort}");
-        Logger.Log($"UDP сервер запущен на порту {udpPort}");
+        Logger.Log($"TCP сервер запущен на {ipAddress}:{tcpPort}");
+        Logger.Log($"UDP сервер запущен на {ipAddress}:{udpPort}");
+
+        // ================= ОСТАНОВКА =================
 
         Console.CancelKeyPress += (sender, e) =>
         {
@@ -55,6 +71,8 @@ class Server
 
             e.Cancel = true;
         };
+
+        // ================= ЗАПУСК ПОТОКОВ =================
 
         new Thread(() => AcceptTcpClients(tcpListener)) { IsBackground = true }.Start();
         new Thread(() => ReceiveUdpMessages()) { IsBackground = true }.Start();
@@ -136,7 +154,6 @@ class Server
                 lock (udpLock)
                     udpClients.Add(remoteEP);
 
-                // 👇 передаём отправителя
                 ProcessMessage(message, "UDP", null, remoteEP);
             }
             catch (Exception ex)
@@ -162,7 +179,7 @@ class Server
         Logger.Log(fullMessage);
 
         BroadcastTcp(fullMessage, senderTcp);
-        BroadcastUdp(fullMessage, senderUdp); // 👈 теперь передаём отправителя
+        BroadcastUdp(fullMessage, senderUdp);
     }
 
     // ================= РАССЫЛКА =================
@@ -201,7 +218,6 @@ class Server
         {
             foreach (var endpoint in udpClients)
             {
-                // ❗ ГЛАВНОЕ ИСПРАВЛЕНИЕ
                 if (sender != null && endpoint.Equals(sender))
                     continue;
 
@@ -216,31 +232,4 @@ class Server
             }
         }
     }
-
-    // ================= CONFIG =================
-
-    private static Config LoadConfig(string filePath)
-    {
-        try
-        {
-            if (System.IO.File.Exists(filePath))
-            {
-                string json = System.IO.File.ReadAllText(filePath);
-                return System.Text.Json.JsonSerializer.Deserialize<Config>(json);
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Ошибка конфигурации: {ex.Message}");
-        }
-
-        return new Config();
-    }
-}
-
-class Config
-{
-    public string ServerIp { get; set; }
-    public int? TcpPort { get; set; }
-    public int? UdpPort { get; set; }
 }
