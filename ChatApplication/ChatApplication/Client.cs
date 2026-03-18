@@ -55,7 +55,14 @@ class Client
 
                 NetworkStream stream = client.GetStream();
 
+                // 🔥 прием сообщений
                 new Thread(() => ReceiveTcpMessages(stream))
+                {
+                    IsBackground = true
+                }.Start();
+
+                // 🔥 heartbeat
+                new Thread(() => SendHeartbeatTcp(stream))
                 {
                     IsBackground = true
                 }.Start();
@@ -87,7 +94,14 @@ class Client
 
                 IPEndPoint serverEP = new IPEndPoint(IPAddress.Parse(serverIp), serverPort);
 
+                // 🔥 прием
                 new Thread(() => ReceiveUdpMessages(udpClient))
+                {
+                    IsBackground = true
+                }.Start();
+
+                // 🔥 heartbeat
+                new Thread(() => SendHeartbeatUdp(udpClient, serverEP))
                 {
                     IsBackground = true
                 }.Start();
@@ -107,6 +121,36 @@ class Client
                 Logger.Log($"Ошибка UDP клиента: {ex.Message}");
             }
         }
+    }
+
+    // ================= HEARTBEAT =================
+
+    private static void SendHeartbeatTcp(NetworkStream stream)
+    {
+        try
+        {
+            while (true)
+            {
+                Thread.Sleep(5000);
+                byte[] data = Encoding.UTF8.GetBytes("PING");
+                stream.Write(data, 0, data.Length);
+            }
+        }
+        catch { }
+    }
+
+    private static void SendHeartbeatUdp(UdpClient client, IPEndPoint serverEP)
+    {
+        try
+        {
+            while (true)
+            {
+                Thread.Sleep(5000);
+                byte[] data = Encoding.UTF8.GetBytes("PING");
+                client.Send(data, data.Length, serverEP);
+            }
+        }
+        catch { }
     }
 
     // ================= TCP =================
@@ -138,6 +182,10 @@ class Client
                 if (bytesRead == 0) break;
 
                 string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+
+                // ❗ игнор heartbeat
+                if (message == "PING" || message == "PONG")
+                    continue;
 
                 PrintReceived("TCP", message);
             }
@@ -175,6 +223,10 @@ class Client
             {
                 byte[] data = client.Receive(ref remoteEP);
                 string message = Encoding.UTF8.GetString(data);
+
+                // ❗ игнор heartbeat
+                if (message == "PING" || message == "PONG")
+                    continue;
 
                 PrintReceived("UDP", message);
             }
