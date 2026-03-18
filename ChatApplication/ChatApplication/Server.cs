@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -6,41 +7,89 @@ using System.Threading;
 
 class Server
 {
+    private static List<TcpClient> connectedClients = new List<TcpClient>();
+    private static HashSet<IPEndPoint> udpClients = new HashSet<IPEndPoint>();
+
+    private static readonly object clientListLock = new object();
+    private static readonly object udpLock = new object();
+
+    private static bool isRunning = true;
+    private static UdpClient udpServer;
+
     public static void Start()
     {
-        int tcpPort = 12345;
-        int udpPort = 12346;
+        var config = LoadConfig("config.json");
 
-        Console.WriteLine($"Запуск TCP сервера на порту {tcpPort}...");
-        Console.WriteLine($"Запуск UDP сервера на порту {udpPort}...");
+        int tcpPort = config.TcpPort ?? 12345;
+        int udpPort = config.UdpPort ?? 12346;
+
+        Console.WriteLine($"TCP порт: {tcpPort}");
+        Console.WriteLine($"UDP порт: {udpPort}");
 
         TcpListener tcpListener = new TcpListener(IPAddress.Any, tcpPort);
-        UdpClient udpServer = new UdpClient(udpPort);
+        udpServer = new UdpClient(udpPort);
 
+        udpServer.Client.IOControl(
+            (IOControlCode)0x9800000C, // SIO_UDP_CONNRESET
+            new byte[] { 0 },
+            null
+        );
         tcpListener.Start();
         Logger.Log($"TCP сервер запущен на порту {tcpPort}");
         Logger.Log($"UDP сервер запущен на порту {udpPort}");
 
-        // Запуск потоков для обработки TCP и UDP
-        new Thread(() => AcceptTcpClients(tcpListener)) { IsBackground = true }.Start();
-        new Thread(() => ReceiveUdpMessages(udpServer)) { IsBackground = true }.Start();
+        Console.CancelKeyPress += (sender, e) =>
+        {
+            Console.WriteLine("\nЗавершение работы сервера...");
+            Logger.Log("Сервер завершает работу...");
+            isRunning = false;
 
-        Console.WriteLine("Серверы запущены. Нажмите Ctrl+C для завершения.");
-        Thread.Sleep(Timeout.Infinite);
+            tcpListener.Stop();
+            udpServer.Close();
+
+            lock (clientListLock)
+            {
+                foreach (var client in connectedClients)
+                    client.Close();
+
+                connectedClients.Clear();
+            }
+
+            e.Cancel = true;
+        };
+
+        new Thread(() => AcceptTcpClients(tcpListener)) { IsBackground = true }.Start();
+        new Thread(() => ReceiveUdpMessages()) { IsBackground = true }.Start();
+
+        Console.WriteLine("Сервер запущен. Ctrl+C для выхода.");
+
+        while (isRunning)
+            Thread.Sleep(500);
+
+        Logger.Log("Сервер завершил работу.");
     }
+
+    // ================= TCP =================
 
     private static void AcceptTcpClients(TcpListener tcpListener)
     {
-        while (true)
+        while (isRunning)
         {
             try
             {
                 TcpClient client = tcpListener.AcceptTcpClient();
+
+                lock (clientListLock)
+                    connectedClients.Add(client);
+
+                Logger.Log("Новый TCP клиент подключен");
+
                 new Thread(() => HandleTcpClient(client)) { IsBackground = true }.Start();
             }
             catch (Exception ex)
             {
-                Logger.Log($"Ошибка TCP: {ex.Message}");
+                if (isRunning)
+                    Logger.Log($"Ошибка TCP: {ex.Message}");
             }
         }
     }
@@ -51,46 +100,146 @@ class Server
         {
             using NetworkStream stream = client.GetStream();
             byte[] buffer = new byte[1024];
-            int bytesRead = stream.Read(buffer, 0, buffer.Length);
-            string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
-            Console.WriteLine($"[TCP] Получено сообщение: {message}");
-            Logger.Log($"[TCP] Получено сообщение: {message}");
+            while (isRunning)
+            {
+                int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                if (bytesRead == 0) break;
 
-            string response = "Сообщение получено!";
-            byte[] responseData = Encoding.UTF8.GetBytes(response);
-            stream.Write(responseData, 0, responseData.Length);
+                string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+
+                ProcessMessage(message, "TCP", client);
+            }
         }
         catch (Exception ex)
         {
-            Logger.Log($"Ошибка обработки TCP клиента: {ex.Message}");
+            Logger.Log($"Ошибка TCP клиента: {ex.Message}");
         }
         finally
         {
+            lock (clientListLock)
+                connectedClients.Remove(client);
+
             client.Close();
         }
     }
 
-    private static void ReceiveUdpMessages(UdpClient udpServer)
+    // ================= UDP =================
+
+    private static void ReceiveUdpMessages()
     {
-        while (true)
+        while (isRunning)
         {
             try
             {
                 IPEndPoint remoteEP = null;
-                byte[] receivedData = udpServer.Receive(ref remoteEP);
-                string message = Encoding.UTF8.GetString(receivedData);
-                Console.WriteLine($"[UDP] Получено сообщение от {remoteEP}: {message}");
-                Logger.Log($"[UDP] Получено сообщение от {remoteEP}: {message}");
+                byte[] data = udpServer.Receive(ref remoteEP);
 
-                string response = "Принято!";
-                byte[] responseData = Encoding.UTF8.GetBytes(response);
-                udpServer.Send(responseData, responseData.Length, remoteEP);
+                string message = Encoding.UTF8.GetString(data);
+
+                lock (udpLock)
+                    udpClients.Add(remoteEP);
+
+                ProcessMessage(message, "UDP");
             }
             catch (Exception ex)
             {
-                Logger.Log($"Ошибка UDP: {ex.Message}");
+                if (isRunning)
+                    Logger.Log($"Ошибка UDP: {ex.Message}");
             }
         }
     }
+
+    // ================= ОБЩАЯ ЛОГИКА =================
+
+    private static void ProcessMessage(string message, string protocol, TcpClient sender = null)
+    {
+        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        string fullMessage = $"[{timestamp}] [{protocol}] {message}";
+
+        Console.WriteLine(fullMessage);
+        Logger.Log(fullMessage);
+
+        BroadcastTcp(fullMessage, sender);
+        BroadcastUdp(fullMessage);
+    }
+
+    // ================= РАССЫЛКА =================
+
+    private static void BroadcastTcp(string message, TcpClient sender)
+    {
+        byte[] data = Encoding.UTF8.GetBytes(message);
+
+        lock (clientListLock)
+        {
+            foreach (var client in connectedClients)
+            {
+                if (client == sender) continue;
+
+                try
+                {
+                    if (client.Connected)
+                    {
+                        NetworkStream stream = client.GetStream();
+                        stream.Write(data, 0, data.Length);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Ошибка отправки TCP: {ex.Message}");
+                }
+            }
+        }
+    }
+
+    private static void BroadcastUdp(string message)
+    {
+        byte[] data = Encoding.UTF8.GetBytes(message);
+
+        lock (udpLock)
+        {
+            foreach (var endpoint in udpClients)
+            {
+                try
+                {
+                    udpServer.Send(data, data.Length, endpoint);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Ошибка отправки UDP: {ex.Message}");
+                }
+            }
+        }
+    }
+
+    // ================= CONFIG =================
+
+    private static Config LoadConfig(string filePath)
+    {
+        try
+        {
+            if (System.IO.File.Exists(filePath))
+            {
+                string json = System.IO.File.ReadAllText(filePath);
+                return System.Text.Json.JsonSerializer.Deserialize<Config>(json);
+            }
+            else
+            {
+                Logger.Log("config.json не найден");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Ошибка конфигурации: {ex.Message}");
+        }
+
+        return new Config();
+    }
+}
+
+class Config
+{
+    public string ServerIp { get; set; }
+    public int? TcpPort { get; set; }
+    public int? UdpPort { get; set; }
 }

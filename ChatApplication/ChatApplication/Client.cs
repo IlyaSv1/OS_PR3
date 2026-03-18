@@ -1,4 +1,4 @@
-﻿using System;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
@@ -6,54 +6,191 @@ class Client
 {
     public static void Start()
     {
-        Console.WriteLine("Введите IP сервера (по умолчанию 127.0.0.1):");
-        string serverIp = Console.ReadLine();
-        if (string.IsNullOrWhiteSpace(serverIp)) serverIp = "127.0.0.1";
+        Console.WriteLine("Выберите протокол:");
+        Console.WriteLine("1 - TCP");
+        Console.WriteLine("2 - UDP");
 
-        Console.WriteLine("Введите порт TCP сервера (по умолчанию 12345):");
-        if (!int.TryParse(Console.ReadLine(), out int tcpPort)) tcpPort = 12345;
+        string protocol = Console.ReadLine();
 
-        Console.WriteLine("Введите порт UDP сервера (по умолчанию 12346):");
-        if (!int.TryParse(Console.ReadLine(), out int udpPort)) udpPort = 12346;
-
-        Console.WriteLine("Введите сообщение для отправки (для выхода введите 'exit'):");
-
-        using (var udpClient = new UdpClient())
+        if (protocol != "1" && protocol != "2")
         {
-            while (true)
+            Console.WriteLine("Неверный выбор протокола");
+            return;
+        }
+
+        Console.Write("Введите IP сервера: ");
+        string serverIp = Console.ReadLine();
+
+        Console.Write("Введите порт сервера: ");
+        int serverPort = int.Parse(Console.ReadLine());
+
+        Console.Write("Введите локальный порт (0 = авто): ");
+        int localPort = int.Parse(Console.ReadLine());
+
+        Console.WriteLine("Введите сообщение (exit для выхода):");
+
+        // ================= TCP =================
+        if (protocol == "1")
+        {
+            try
             {
-                string message = Console.ReadLine();
-                if (message.ToLower() == "exit") break;
+                TcpClient client;
 
-                // Отправка TCP сообщения
-                SendMessageTcp(serverIp, tcpPort, message);
+                if (localPort == 0)
+                    client = new TcpClient(serverIp, serverPort);
+                else
+                {
+                    client = new TcpClient(new IPEndPoint(IPAddress.Any, localPort));
+                    client.Connect(serverIp, serverPort);
+                }
 
-                // Отправка UDP сообщения
-                byte[] data = Encoding.UTF8.GetBytes(message);
-                udpClient.Send(data, data.Length, serverIp, udpPort);
-                Console.WriteLine("[UDP] Сообщение отправлено.");
+                NetworkStream stream = client.GetStream();
+
+                new Thread(() => ReceiveTcpMessages(stream))
+                {
+                    IsBackground = true
+                }.Start();
+
+                while (true)
+                {
+                    string message = Console.ReadLine();
+                    if (message?.ToLower() == "exit") break;
+
+                    SendMessageTcp(stream, message);
+                }
+
+                client.Close();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Ошибка TCP клиента: {ex.Message}");
+            }
+        }
+
+        // ================= UDP =================
+        else
+        {
+            try
+            {
+                UdpClient udpClient = localPort == 0
+                    ? new UdpClient(0)
+                    : new UdpClient(localPort);
+
+                IPEndPoint serverEP = new IPEndPoint(IPAddress.Parse(serverIp), serverPort);
+
+                new Thread(() => ReceiveUdpMessages(udpClient))
+                {
+                    IsBackground = true
+                }.Start();
+
+                while (true)
+                {
+                    string message = Console.ReadLine();
+                    if (message?.ToLower() == "exit") break;
+
+                    SendMessageUdp(udpClient, serverEP, message);
+                }
+
+                udpClient.Close();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Ошибка UDP клиента: {ex.Message}");
             }
         }
     }
 
-    private static void SendMessageTcp(string serverIp, int tcpPort, string message)
+    // ================= TCP =================
+
+    private static void SendMessageTcp(NetworkStream stream, string message)
     {
         try
         {
-            using var client = new TcpClient(serverIp, tcpPort);
-            NetworkStream stream = client.GetStream();
             byte[] data = Encoding.UTF8.GetBytes(message);
             stream.Write(data, 0, data.Length);
 
-            byte[] response = new byte[1024];
-            int bytesRead = stream.Read(response, 0, response.Length);
-            string responseMessage = Encoding.UTF8.GetString(response, 0, bytesRead);
-            Console.WriteLine($"[TCP] Ответ от сервера: {responseMessage}");
+            PrintLocal("TCP", message);
         }
         catch (Exception ex)
         {
-            Logger.Log($"Ошибка TCP клиента: {ex.Message}");
-            Console.WriteLine("Ошибка TCP клиента.");
+            Logger.Log($"Ошибка отправки TCP: {ex.Message}");
         }
+    }
+
+    private static void ReceiveTcpMessages(NetworkStream stream)
+    {
+        try
+        {
+            byte[] buffer = new byte[1024];
+
+            while (true)
+            {
+                int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                if (bytesRead == 0) break;
+
+                string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+
+                PrintReceived("TCP", message);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Ошибка при получении TCP: {ex.Message}");
+        }
+    }
+
+    // ================= UDP =================
+
+    private static void SendMessageUdp(UdpClient client, IPEndPoint serverEP, string message)
+    {
+        try
+        {
+            byte[] data = Encoding.UTF8.GetBytes(message);
+            client.Send(data, data.Length, serverEP);
+
+            PrintLocal("UDP", message);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Ошибка UDP отправки: {ex.Message}");
+        }
+    }
+
+    private static void ReceiveUdpMessages(UdpClient client)
+    {
+        try
+        {
+            IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
+
+            while (true)
+            {
+                byte[] data = client.Receive(ref remoteEP);
+                string message = Encoding.UTF8.GetString(data);
+
+                PrintReceived("UDP", message);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Ошибка при получении UDP: {ex.Message}");
+        }
+    }
+
+    // ================= ВЫВОД =================
+
+    private static void PrintLocal(string protocol, string message)
+    {
+        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        Console.WriteLine($"[{timestamp}] [YOU:{protocol}] {message}");
+    }
+
+    private static void PrintReceived(string transport, string message)
+    {
+        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+        string source = message.Contains("[TCP]") ? "TCP" :
+                        message.Contains("[UDP]") ? "UDP" : "UNKNOWN";
+
+        Console.WriteLine($"[{timestamp}] [RECV:{transport}] [SRC:{source}] {message}");
     }
 }

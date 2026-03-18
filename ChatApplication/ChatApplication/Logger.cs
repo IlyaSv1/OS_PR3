@@ -11,4 +11,5 @@ class Logger
         Console.WriteLine(logMessage);
         File.AppendAllText(logFile, logMessage + Environment.NewLine);
     }
+
 }
