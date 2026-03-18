@@ -23,9 +23,6 @@ class Server
         int tcpPort = config.TcpPort ?? 12345;
         int udpPort = config.UdpPort ?? 12346;
 
-        Console.WriteLine($"TCP порт: {tcpPort}");
-        Console.WriteLine($"UDP порт: {udpPort}");
-
         TcpListener tcpListener = new TcpListener(IPAddress.Any, tcpPort);
         udpServer = new UdpClient(udpPort);
 

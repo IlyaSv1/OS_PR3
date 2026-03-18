@@ -207,7 +207,7 @@ class Client
 
             string timestamp = DateTime.Now.ToString("HH:mm:ss");
 
-            Console.WriteLine($"[{timestamp}] {source} → {transport}: {text}");
+            Console.WriteLine($"[{timestamp}] {source} -> {transport}: {text}");
         }
         catch
         {
