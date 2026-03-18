@@ -34,15 +34,12 @@ class Client
         {
             try
             {
-                TcpClient client;
+                TcpClient client = localPort == 0
+                    ? new TcpClient(serverIp, serverPort)
+                    : new TcpClient(new IPEndPoint(IPAddress.Any, localPort));
 
-                if (localPort == 0)
-                    client = new TcpClient(serverIp, serverPort);
-                else
-                {
-                    client = new TcpClient(new IPEndPoint(IPAddress.Any, localPort));
+                if (localPort != 0)
                     client.Connect(serverIp, serverPort);
-                }
 
                 NetworkStream stream = client.GetStream();
 
@@ -180,17 +177,41 @@ class Client
 
     private static void PrintLocal(string protocol, string message)
     {
-        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-        Console.WriteLine($"[{timestamp}] [YOU:{protocol}] {message}");
+        string timestamp = DateTime.Now.ToString("HH:mm:ss");
+        Console.WriteLine($"[{timestamp}] Вы ({protocol}): {message}");
     }
 
     private static void PrintReceived(string transport, string message)
     {
-        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        try
+        {
+            // ожидаем формат сервера:
+            // [timestamp] [TCP] message
 
-        string source = message.Contains("[TCP]") ? "TCP" :
-                        message.Contains("[UDP]") ? "UDP" : "UNKNOWN";
+            int firstBracketEnd = message.IndexOf(']');
+            int secondBracketStart = message.IndexOf('[', firstBracketEnd + 1);
+            int secondBracketEnd = message.IndexOf(']', secondBracketStart + 1);
 
-        Console.WriteLine($"[{timestamp}] [RECV:{transport}] [SRC:{source}] {message}");
+            if (secondBracketStart == -1 || secondBracketEnd == -1)
+                return;
+
+            string source = message.Substring(
+                secondBracketStart + 1,
+                secondBracketEnd - secondBracketStart - 1);
+
+            string text = message.Substring(secondBracketEnd + 2);
+
+            // ❗ фильтр эха (своих сообщений)
+            if (text.Trim().Length == 0)
+                return;
+
+            string timestamp = DateTime.Now.ToString("HH:mm:ss");
+
+            Console.WriteLine($"[{timestamp}] {source} → {transport}: {text}");
+        }
+        catch
+        {
+            // если формат не совпал — просто игнор
+        }
     }
 }

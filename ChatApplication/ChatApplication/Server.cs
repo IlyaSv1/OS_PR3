@@ -30,18 +30,19 @@ class Server
         udpServer = new UdpClient(udpPort);
 
         udpServer.Client.IOControl(
-            (IOControlCode)0x9800000C, // SIO_UDP_CONNRESET
+            (IOControlCode)0x9800000C,
             new byte[] { 0 },
             null
         );
+
         tcpListener.Start();
+
         Logger.Log($"TCP сервер запущен на порту {tcpPort}");
         Logger.Log($"UDP сервер запущен на порту {udpPort}");
 
         Console.CancelKeyPress += (sender, e) =>
         {
             Console.WriteLine("\nЗавершение работы сервера...");
-            Logger.Log("Сервер завершает работу...");
             isRunning = false;
 
             tcpListener.Stop();
@@ -65,8 +66,6 @@ class Server
 
         while (isRunning)
             Thread.Sleep(500);
-
-        Logger.Log("Сервер завершил работу.");
     }
 
     // ================= TCP =================
@@ -108,7 +107,7 @@ class Server
 
                 string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
-                ProcessMessage(message, "TCP", client);
+                ProcessMessage(message, "TCP", client, null);
             }
         }
         catch (Exception ex)
@@ -140,7 +139,8 @@ class Server
                 lock (udpLock)
                     udpClients.Add(remoteEP);
 
-                ProcessMessage(message, "UDP");
+                // 👇 передаём отправителя
+                ProcessMessage(message, "UDP", null, remoteEP);
             }
             catch (Exception ex)
             {
@@ -152,7 +152,11 @@ class Server
 
     // ================= ОБЩАЯ ЛОГИКА =================
 
-    private static void ProcessMessage(string message, string protocol, TcpClient sender = null)
+    private static void ProcessMessage(
+        string message,
+        string protocol,
+        TcpClient senderTcp = null,
+        IPEndPoint senderUdp = null)
     {
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         string fullMessage = $"[{timestamp}] [{protocol}] {message}";
@@ -160,8 +164,8 @@ class Server
         Console.WriteLine(fullMessage);
         Logger.Log(fullMessage);
 
-        BroadcastTcp(fullMessage, sender);
-        BroadcastUdp(fullMessage);
+        BroadcastTcp(fullMessage, senderTcp);
+        BroadcastUdp(fullMessage, senderUdp); // 👈 теперь передаём отправителя
     }
 
     // ================= РАССЫЛКА =================
@@ -192,7 +196,7 @@ class Server
         }
     }
 
-    private static void BroadcastUdp(string message)
+    private static void BroadcastUdp(string message, IPEndPoint sender)
     {
         byte[] data = Encoding.UTF8.GetBytes(message);
 
@@ -200,6 +204,10 @@ class Server
         {
             foreach (var endpoint in udpClients)
             {
+                // ❗ ГЛАВНОЕ ИСПРАВЛЕНИЕ
+                if (sender != null && endpoint.Equals(sender))
+                    continue;
+
                 try
                 {
                     udpServer.Send(data, data.Length, endpoint);
@@ -222,10 +230,6 @@ class Server
             {
                 string json = System.IO.File.ReadAllText(filePath);
                 return System.Text.Json.JsonSerializer.Deserialize<Config>(json);
-            }
-            else
-            {
-                Logger.Log("config.json не найден");
             }
         }
         catch (Exception ex)
