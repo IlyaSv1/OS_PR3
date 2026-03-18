@@ -175,7 +175,6 @@ class Server
         string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         string fullMessage = $"[{timestamp}] [{protocol}] {message}";
 
-        Console.WriteLine(fullMessage);
         Logger.Log(fullMessage);
 
         BroadcastTcp(fullMessage, senderTcp);
