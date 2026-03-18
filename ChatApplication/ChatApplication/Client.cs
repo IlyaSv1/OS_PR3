@@ -18,14 +18,26 @@ class Client
             return;
         }
 
-        Console.Write("Введите IP сервера: ");
+        // ================= ВВОД С ДЕФОЛТАМИ =================
+
+        Console.Write("Введите IP сервера (Enter = 127.0.0.1): ");
         string serverIp = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(serverIp))
+            serverIp = "127.0.0.1";
 
-        Console.Write("Введите порт сервера: ");
-        int serverPort = int.Parse(Console.ReadLine());
+        int defaultPort = protocol == "1" ? 12345 : 12346;
 
-        Console.Write("Введите локальный порт (0 = авто): ");
-        int localPort = int.Parse(Console.ReadLine());
+        Console.Write($"Введите порт сервера (Enter = {defaultPort}): ");
+        string portInput = Console.ReadLine();
+        int serverPort = string.IsNullOrWhiteSpace(portInput)
+            ? defaultPort
+            : int.Parse(portInput);
+
+        Console.Write("Введите локальный порт (Enter = авто): ");
+        string localInput = Console.ReadLine();
+        int localPort = string.IsNullOrWhiteSpace(localInput)
+            ? 0
+            : int.Parse(localInput);
 
         Console.WriteLine("Введите сообщение (exit для выхода):");
 
@@ -185,9 +197,6 @@ class Client
     {
         try
         {
-            // ожидаем формат сервера:
-            // [timestamp] [TCP] message
-
             int firstBracketEnd = message.IndexOf(']');
             int secondBracketStart = message.IndexOf('[', firstBracketEnd + 1);
             int secondBracketEnd = message.IndexOf(']', secondBracketStart + 1);
@@ -201,17 +210,13 @@ class Client
 
             string text = message.Substring(secondBracketEnd + 2);
 
-            // ❗ фильтр эха (своих сообщений)
-            if (text.Trim().Length == 0)
-                return;
-
             string timestamp = DateTime.Now.ToString("HH:mm:ss");
 
             Console.WriteLine($"[{timestamp}] {source} -> {transport}: {text}");
         }
         catch
         {
-            // если формат не совпал — просто игнор
+            // игнор
         }
     }
 }
