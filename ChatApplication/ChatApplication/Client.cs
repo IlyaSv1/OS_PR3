@@ -5,9 +5,16 @@ using System.Text;
 class Client
 {
     private static readonly object tcpSendLock = new object();
+    private static string nickname;
 
     public static void Start()
     {
+        Console.Write("Введите ник: ");
+        nickname = Console.ReadLine();
+
+        if (string.IsNullOrWhiteSpace(nickname))
+            nickname = "Anonymous";
+
         Console.WriteLine("Выберите протокол:");
         Console.WriteLine("1 - TCP");
         Console.WriteLine("2 - UDP");
@@ -53,6 +60,9 @@ class Client
                 client.Connect(ip, port);
 
             var stream = client.GetStream();
+
+            // 🔥 регистрация
+            SendTcp(stream, $"HELLO|{nickname}");
 
             new Thread(() => ReceiveTcp(stream)) { IsBackground = true }.Start();
             new Thread(() => HeartbeatTcp(stream)) { IsBackground = true }.Start();
@@ -143,8 +153,8 @@ class Client
 
             IPEndPoint serverEP = new IPEndPoint(IPAddress.Parse(ip), port);
 
-            // регистрация
-            SendUdp(client, serverEP, "HELLO");
+            // 🔥 регистрация
+            SendUdp(client, serverEP, $"HELLO|{nickname}");
 
             new Thread(() => ReceiveUdp(client)) { IsBackground = true }.Start();
             new Thread(() => HeartbeatUdp(client, serverEP)) { IsBackground = true }.Start();
@@ -194,6 +204,14 @@ class Client
 
                 Console.WriteLine(msg);
             }
+        }
+        catch (ObjectDisposedException)
+        {
+
+        }
+        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.Interrupted)
+        {
+
         }
         catch (Exception ex)
         {

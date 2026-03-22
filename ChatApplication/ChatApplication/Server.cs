@@ -6,9 +6,11 @@ class Server
 {
     private static List<TcpClient> tcpClients = new();
     private static Dictionary<TcpClient, DateTime> tcpLastSeen = new();
+    private static Dictionary<TcpClient, string> tcpNames = new();
 
     private static HashSet<IPEndPoint> udpClients = new();
     private static Dictionary<IPEndPoint, DateTime> udpLastSeen = new();
+    private static Dictionary<IPEndPoint, string> udpNames = new();
 
     private static readonly object tcpLock = new();
     private static readonly object udpLock = new();
@@ -72,8 +74,6 @@ class Server
                     tcpLastSeen[client] = DateTime.Now;
                 }
 
-                Console.WriteLine("TCP клиент подключен");
-
                 new Thread(() => HandleTcp(client)) { IsBackground = true }.Start();
             }
             catch { }
@@ -104,14 +104,18 @@ class Server
 
     private static void RemoveTcp(TcpClient client)
     {
+        string clientName = tcpNames.ContainsKey(client) ? tcpNames[client] : "unknown";
+
         lock (tcpLock)
         {
             tcpClients.Remove(client);
             tcpLastSeen.Remove(client);
+            tcpNames.Remove(client);
         }
 
         client.Close();
-        Console.WriteLine("TCP клиент отключен");
+
+        Console.WriteLine($"Клиент отключен [TCP] {clientName}");
     }
 
     // ================= UDP =================
@@ -154,11 +158,33 @@ class Server
             }
         }
 
-        // регистрация UDP
-        if (msg == "HELLO")
-            return;
+        // ================= HELLO =================
 
-        // heartbeat
+        if (msg.StartsWith("HELLO"))
+        {
+            string nick = "Anonymous";
+
+            if (msg.Contains("|"))
+                nick = msg.Split('|')[1];
+
+            if (protocol == "TCP" && tcp != null)
+            {
+                lock (tcpLock)
+                    tcpNames[tcp] = nick;
+            }
+
+            if (protocol == "UDP" && udp != null)
+            {
+                lock (udpLock)
+                    udpNames[udp] = nick;
+            }
+
+            Console.WriteLine($"Клиент подключен [{protocol}] {nick}");
+            return;
+        }
+
+        // ================= HEARTBEAT =================
+
         if (msg == "PING")
         {
             if (tcp != null) SendTcp(tcp, "PONG");
@@ -169,34 +195,34 @@ class Server
         if (msg == "PONG")
             return;
 
+        // ================= MESSAGE =================
+
+        string senderName = protocol == "TCP"
+            ? tcpNames.GetValueOrDefault(tcp, "Unknown")
+            : udpNames.GetValueOrDefault(udp, "Unknown");
+
         string time = DateTime.Now.ToString("HH:mm:ss");
 
-        // 🔥 ЛОГ НА СЕРВЕРЕ (главное отличие)
-        Console.WriteLine($"[{time}] {protocol} -> ALL: {msg}");
+        Console.WriteLine($"[{time}] [{protocol}] {senderName}: {msg}");
 
-        // 🔥 отправка TCP
+        // TCP
         lock (tcpLock)
         {
             foreach (var c in tcpClients.ToList())
             {
                 if (c == tcp) continue;
-
-                Console.WriteLine($"[{time}] {protocol} -> TCP");
-
-                SendTcp(c, $"[{time}] {protocol}: {msg}");
+                SendTcp(c, $"[{time}] [{protocol}] {senderName}: {msg}");
             }
         }
 
-        // 🔥 отправка UDP
+        // UDP
         lock (udpLock)
         {
             foreach (var ep in udpClients.ToList())
             {
                 if (udp != null && ep.Equals(udp)) continue;
 
-                Console.WriteLine($"[{time}] {protocol} -> UDP");
-
-                SendUdp(ep, $"[{time}] {protocol}: {msg}");
+                SendUdp(ep, $"[{time}] [{protocol}] {senderName}: {msg}");
             }
         }
     }
@@ -233,7 +259,10 @@ class Server
             {
                 udpClients.Remove(ep);
                 udpLastSeen.Remove(ep);
+                udpNames.Remove(ep);
             }
+
+            Console.WriteLine($"Клиент отключен [UDP] {ep}");
         }
     }
 
@@ -266,9 +295,11 @@ class Server
                     if (!udpLastSeen.ContainsKey(ep) ||
                         (now - udpLastSeen[ep]).TotalSeconds > 15)
                     {
-                        Console.WriteLine("UDP timeout");
+                        Console.WriteLine($"UDP timeout {ep}");
+
                         udpClients.Remove(ep);
                         udpLastSeen.Remove(ep);
+                        udpNames.Remove(ep);
                     }
                 }
             }
