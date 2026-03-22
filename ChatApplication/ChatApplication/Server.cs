@@ -1,83 +1,56 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 
 class Server
 {
-    private static List<TcpClient> connectedClients = new List<TcpClient>();
-    private static HashSet<IPEndPoint> udpClients = new HashSet<IPEndPoint>();
-
+    private static List<TcpClient> tcpClients = new();
     private static Dictionary<TcpClient, DateTime> tcpLastSeen = new();
+
+    private static HashSet<IPEndPoint> udpClients = new();
     private static Dictionary<IPEndPoint, DateTime> udpLastSeen = new();
 
-    private static readonly object clientListLock = new object();
-    private static readonly object udpLock = new object();
+    private static readonly object tcpLock = new();
+    private static readonly object udpLock = new();
+    private static readonly object tcpSendLock = new();
 
     private static bool isRunning = true;
     private static UdpClient udpServer;
 
     public static void Start()
     {
-        // ================= ВВОД =================
+        Console.Write("IP (Enter = 127.0.0.1): ");
+        string ip = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(ip))
+            ip = "127.0.0.1";
 
-        Console.Write("Введите IP сервера (Enter = 127.0.0.1): ");
-        string ipInput = Console.ReadLine();
-        if (string.IsNullOrWhiteSpace(ipInput))
-            ipInput = "127.0.0.1";
+        Console.Write("TCP порт (Enter = 12345): ");
+        int tcpPort = int.TryParse(Console.ReadLine(), out int tp) ? tp : 12345;
 
-        IPAddress ipAddress = IPAddress.Parse(ipInput);
+        Console.Write("UDP порт (Enter = 12346): ");
+        int udpPort = int.TryParse(Console.ReadLine(), out int up) ? up : 12346;
 
-        Console.Write("Введите TCP порт (Enter = 12345): ");
-        string tcpInput = Console.ReadLine();
-        int tcpPort = string.IsNullOrWhiteSpace(tcpInput) ? 12345 : int.Parse(tcpInput);
+        IPAddress ipAddr = IPAddress.Parse(ip);
 
-        Console.Write("Введите UDP порт (Enter = 12346): ");
-        string udpInput = Console.ReadLine();
-        int udpPort = string.IsNullOrWhiteSpace(udpInput) ? 12346 : int.Parse(udpInput);
-
-        // ================= СЕРВЕР =================
-
-        TcpListener tcpListener = new TcpListener(ipAddress, tcpPort);
-        udpServer = new UdpClient(new IPEndPoint(ipAddress, udpPort));
+        TcpListener tcpListener = new TcpListener(ipAddr, tcpPort);
+        udpServer = new UdpClient(new IPEndPoint(ipAddr, udpPort));
 
         tcpListener.Start();
 
-        Logger.Log($"TCP сервер запущен на {ipAddress}:{tcpPort}");
-        Logger.Log($"UDP сервер запущен на {ipAddress}:{udpPort}");
+        Console.WriteLine($"TCP: {ip}:{tcpPort}");
+        Console.WriteLine($"UDP: {ip}:{udpPort}");
 
-        // ================= ОСТАНОВКА =================
-
-        Console.CancelKeyPress += (sender, e) =>
+        Console.CancelKeyPress += (s, e) =>
         {
-            Logger.Log("Завершение работы сервера...");
             isRunning = false;
-
             tcpListener.Stop();
             udpServer.Close();
-
-            lock (clientListLock)
-            {
-                foreach (var client in connectedClients)
-                    client.Close();
-
-                connectedClients.Clear();
-                tcpLastSeen.Clear();
-            }
-
             e.Cancel = true;
         };
 
-        // ================= ПОТОКИ =================
-
-        new Thread(() => AcceptTcpClients(tcpListener)) { IsBackground = true }.Start();
-        new Thread(() => ReceiveUdpMessages()) { IsBackground = true }.Start();
-        new Thread(CheckClientsAlive) { IsBackground = true }.Start();
-
-        Logger.Log("Сервер запущен. Ctrl+C для выхода.");
+        new Thread(() => AcceptTcp(tcpListener)) { IsBackground = true }.Start();
+        new Thread(ReceiveUdp) { IsBackground = true }.Start();
+        new Thread(CheckAlive) { IsBackground = true }.Start();
 
         while (isRunning)
             Thread.Sleep(500);
@@ -85,235 +58,207 @@ class Server
 
     // ================= TCP =================
 
-    private static void AcceptTcpClients(TcpListener tcpListener)
+    private static void AcceptTcp(TcpListener listener)
     {
         while (isRunning)
         {
             try
             {
-                TcpClient client = tcpListener.AcceptTcpClient();
+                var client = listener.AcceptTcpClient();
 
-                lock (clientListLock)
+                lock (tcpLock)
                 {
-                    connectedClients.Add(client);
+                    tcpClients.Add(client);
                     tcpLastSeen[client] = DateTime.Now;
                 }
 
-                Logger.Log("Новый TCP клиент подключен");
+                Console.WriteLine("TCP клиент подключен");
 
-                new Thread(() => HandleTcpClient(client)) { IsBackground = true }.Start();
+                new Thread(() => HandleTcp(client)) { IsBackground = true }.Start();
             }
-            catch (Exception ex)
-            {
-                if (isRunning)
-                    Logger.Log($"Ошибка TCP: {ex.Message}");
-            }
+            catch { }
         }
     }
 
-    private static void HandleTcpClient(TcpClient client)
+    private static void HandleTcp(TcpClient client)
     {
         try
         {
-            using NetworkStream stream = client.GetStream();
-            byte[] buffer = new byte[1024];
+            using var stream = client.GetStream();
+            using var reader = new StreamReader(stream, Encoding.UTF8);
 
             while (isRunning)
             {
-                int bytesRead = stream.Read(buffer, 0, buffer.Length);
-                if (bytesRead == 0) break;
+                string msg = reader.ReadLine();
+                if (msg == null) break;
 
-                string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-
-                ProcessMessage(message, "TCP", client, null);
+                ProcessMessage(msg, "TCP", client, null);
             }
         }
-        catch (Exception ex)
-        {
-            Logger.Log($"Ошибка TCP клиента: {ex.Message}");
-        }
+        catch { }
         finally
         {
-            lock (clientListLock)
-            {
-                connectedClients.Remove(client);
-                tcpLastSeen.Remove(client);
-            }
-
-            client.Close();
+            RemoveTcp(client);
         }
+    }
+
+    private static void RemoveTcp(TcpClient client)
+    {
+        lock (tcpLock)
+        {
+            tcpClients.Remove(client);
+            tcpLastSeen.Remove(client);
+        }
+
+        client.Close();
+        Console.WriteLine("TCP клиент отключен");
     }
 
     // ================= UDP =================
 
-    private static void ReceiveUdpMessages()
+    private static void ReceiveUdp()
     {
         while (isRunning)
         {
             try
             {
-                IPEndPoint remoteEP = null;
-                byte[] data = udpServer.Receive(ref remoteEP);
+                IPEndPoint ep = null;
+                byte[] data = udpServer.Receive(ref ep);
 
-                string message = Encoding.UTF8.GetString(data);
+                string msg = Encoding.UTF8.GetString(data);
 
-                ProcessMessage(message, "UDP", null, remoteEP);
+                ProcessMessage(msg, "UDP", null, ep);
             }
-            catch (Exception ex)
-            {
-                if (isRunning)
-                    Logger.Log($"Ошибка UDP: {ex.Message}");
-            }
+            catch { }
         }
     }
 
     // ================= ЛОГИКА =================
 
-    private static void ProcessMessage(
-        string message,
-        string protocol,
-        TcpClient senderTcp = null,
-        IPEndPoint senderUdp = null)
+    private static void ProcessMessage(string msg, string protocol,
+        TcpClient tcp = null, IPEndPoint udp = null)
     {
-        // 🔥 СНАЧАЛА обновляем lastSeen
-        if (protocol == "TCP" && senderTcp != null)
+        // обновление активности
+        if (protocol == "TCP" && tcp != null)
         {
-            lock (clientListLock)
-                tcpLastSeen[senderTcp] = DateTime.Now;
+            lock (tcpLock)
+                tcpLastSeen[tcp] = DateTime.Now;
         }
 
-        if (protocol == "UDP" && senderUdp != null)
+        if (protocol == "UDP" && udp != null)
         {
             lock (udpLock)
             {
-                udpClients.Add(senderUdp);
-                udpLastSeen[senderUdp] = DateTime.Now;
+                udpClients.Add(udp);
+                udpLastSeen[udp] = DateTime.Now;
             }
         }
 
-        // 🔥 heartbeat обработка
-        if (message == "PING")
+        // регистрация UDP
+        if (msg == "HELLO")
+            return;
+
+        // heartbeat
+        if (msg == "PING")
         {
-            if (protocol == "TCP" && senderTcp != null)
-                SendTcp(senderTcp, "PONG");
-
-            if (protocol == "UDP" && senderUdp != null)
-                SendUdp(senderUdp, "PONG");
-
+            if (tcp != null) SendTcp(tcp, "PONG");
+            if (udp != null) SendUdp(udp, "PONG");
             return;
         }
 
-        if (message == "PONG")
+        if (msg == "PONG")
             return;
 
-        string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-        string fullMessage = $"[{timestamp}] [{protocol}] {message}";
+        string time = DateTime.Now.ToString("HH:mm:ss");
 
-        Logger.Log(fullMessage);
+        // 🔥 ЛОГ НА СЕРВЕРЕ (главное отличие)
+        Console.WriteLine($"[{time}] {protocol} -> ALL: {msg}");
 
-        BroadcastTcp(fullMessage, senderTcp);
-        BroadcastUdp(fullMessage, senderUdp);
-    }
-
-    // ================= ОТПРАВКА =================
-
-    private static void SendTcp(TcpClient client, string message)
-    {
-        try
+        // 🔥 отправка TCP
+        lock (tcpLock)
         {
-            byte[] data = Encoding.UTF8.GetBytes(message);
-            client.GetStream().Write(data, 0, data.Length);
-        }
-        catch { }
-    }
-
-    private static void SendUdp(IPEndPoint endpoint, string message)
-    {
-        try
-        {
-            byte[] data = Encoding.UTF8.GetBytes(message);
-            udpServer.Send(data, data.Length, endpoint);
-        }
-        catch { }
-    }
-
-    // ================= BROADCAST =================
-
-    private static void BroadcastTcp(string message, TcpClient sender)
-    {
-        byte[] data = Encoding.UTF8.GetBytes(message);
-
-        lock (clientListLock)
-        {
-            foreach (var client in connectedClients.ToList())
+            foreach (var c in tcpClients.ToList())
             {
-                if (client == sender) continue;
+                if (c == tcp) continue;
 
-                try
-                {
-                    if (client.Connected)
-                        client.GetStream().Write(data, 0, data.Length);
-                }
-                catch
-                {
-                    client.Close();
-                    connectedClients.Remove(client);
-                    tcpLastSeen.Remove(client);
-                }
+                Console.WriteLine($"[{time}] {protocol} -> TCP");
+
+                SendTcp(c, $"[{time}] {protocol}: {msg}");
             }
         }
-    }
 
-    private static void BroadcastUdp(string message, IPEndPoint sender)
-    {
-        byte[] data = Encoding.UTF8.GetBytes(message);
-
+        // 🔥 отправка UDP
         lock (udpLock)
         {
-            foreach (var endpoint in udpClients.ToList())
+            foreach (var ep in udpClients.ToList())
             {
-                if (sender != null && endpoint.Equals(sender))
-                    continue;
+                if (udp != null && ep.Equals(udp)) continue;
 
-                try
-                {
-                    udpServer.Send(data, data.Length, endpoint);
-                }
-                catch
-                {
-                    udpClients.Remove(endpoint);
-                    udpLastSeen.Remove(endpoint);
-                }
+                Console.WriteLine($"[{time}] {protocol} -> UDP");
+
+                SendUdp(ep, $"[{time}] {protocol}: {msg}");
+            }
+        }
+    }
+
+    // ================= SEND =================
+
+    private static void SendTcp(TcpClient client, string msg)
+    {
+        try
+        {
+            byte[] data = Encoding.UTF8.GetBytes(msg + "\n");
+
+            lock (tcpSendLock)
+            {
+                client.GetStream().Write(data, 0, data.Length);
+            }
+        }
+        catch
+        {
+            RemoveTcp(client);
+        }
+    }
+
+    private static void SendUdp(IPEndPoint ep, string msg)
+    {
+        try
+        {
+            byte[] data = Encoding.UTF8.GetBytes(msg);
+            udpServer.Send(data, data.Length, ep);
+        }
+        catch
+        {
+            lock (udpLock)
+            {
+                udpClients.Remove(ep);
+                udpLastSeen.Remove(ep);
             }
         }
     }
 
     // ================= CHECK =================
 
-    private static void CheckClientsAlive()
+    private static void CheckAlive()
     {
         while (isRunning)
         {
             Thread.Sleep(10000);
             DateTime now = DateTime.Now;
 
-            // TCP
-            lock (clientListLock)
+            lock (tcpLock)
             {
-                foreach (var client in connectedClients.ToList())
+                foreach (var c in tcpClients.ToList())
                 {
-                    if (!tcpLastSeen.ContainsKey(client) ||
-                        (now - tcpLastSeen[client]).TotalSeconds > 15)
+                    if (!tcpLastSeen.ContainsKey(c) ||
+                        (now - tcpLastSeen[c]).TotalSeconds > 15)
                     {
-                        Logger.Log("TCP клиент отключен (timeout)");
-                        client.Close();
-                        connectedClients.Remove(client);
-                        tcpLastSeen.Remove(client);
+                        Console.WriteLine("TCP timeout");
+                        RemoveTcp(c);
                     }
                 }
             }
 
-            // UDP
             lock (udpLock)
             {
                 foreach (var ep in udpClients.ToList())
@@ -321,7 +266,7 @@ class Server
                     if (!udpLastSeen.ContainsKey(ep) ||
                         (now - udpLastSeen[ep]).TotalSeconds > 15)
                     {
-                        Logger.Log("UDP клиент удален (timeout)");
+                        Console.WriteLine("UDP timeout");
                         udpClients.Remove(ep);
                         udpLastSeen.Remove(ep);
                     }

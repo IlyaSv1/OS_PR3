@@ -4,6 +4,8 @@ using System.Text;
 
 class Client
 {
+    private static readonly object tcpSendLock = new object();
+
     public static void Start()
     {
         Console.WriteLine("Выберите протокол:");
@@ -14,261 +16,201 @@ class Client
 
         if (protocol != "1" && protocol != "2")
         {
-            Console.WriteLine("Неверный выбор протокола");
+            Console.WriteLine("Неверный выбор");
             return;
         }
 
-        // ================= ВВОД С ДЕФОЛТАМИ =================
-
-        Console.Write("Введите IP сервера (Enter = 127.0.0.1): ");
-        string serverIp = Console.ReadLine();
-        if (string.IsNullOrWhiteSpace(serverIp))
-            serverIp = "127.0.0.1";
+        Console.Write("IP (Enter = 127.0.0.1): ");
+        string ip = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(ip))
+            ip = "127.0.0.1";
 
         int defaultPort = protocol == "1" ? 12345 : 12346;
 
-        Console.Write($"Введите порт сервера (Enter = {defaultPort}): ");
-        string portInput = Console.ReadLine();
-        int serverPort = string.IsNullOrWhiteSpace(portInput)
-            ? defaultPort
-            : int.Parse(portInput);
+        Console.Write($"Порт (Enter = {defaultPort}): ");
+        int port = int.TryParse(Console.ReadLine(), out int p) ? p : defaultPort;
 
-        Console.Write("Введите локальный порт (Enter = авто): ");
-        string localInput = Console.ReadLine();
-        int localPort = string.IsNullOrWhiteSpace(localInput)
-            ? 0
-            : int.Parse(localInput);
+        Console.Write("Локальный порт (Enter = авто): ");
+        int localPort = int.TryParse(Console.ReadLine(), out int lp) ? lp : 0;
 
-        Console.WriteLine("Введите сообщение (exit для выхода):");
-
-        // ================= TCP =================
         if (protocol == "1")
-        {
-            try
-            {
-                TcpClient client = localPort == 0
-                    ? new TcpClient(serverIp, serverPort)
-                    : new TcpClient(new IPEndPoint(IPAddress.Any, localPort));
-
-                if (localPort != 0)
-                    client.Connect(serverIp, serverPort);
-
-                NetworkStream stream = client.GetStream();
-
-                // 🔥 прием сообщений
-                new Thread(() => ReceiveTcpMessages(stream))
-                {
-                    IsBackground = true
-                }.Start();
-
-                // 🔥 heartbeat
-                new Thread(() => SendHeartbeatTcp(stream))
-                {
-                    IsBackground = true
-                }.Start();
-
-                while (true)
-                {
-                    string message = Console.ReadLine();
-                    if (message?.ToLower() == "exit") break;
-
-                    SendMessageTcp(stream, message);
-                }
-
-                client.Close();
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"Ошибка TCP клиента: {ex.Message}");
-            }
-        }
-
-        // ================= UDP =================
+            StartTcp(ip, port, localPort);
         else
-        {
-            try
-            {
-                UdpClient udpClient = localPort == 0
-                    ? new UdpClient(0)
-                    : new UdpClient(localPort);
-
-                IPEndPoint serverEP = new IPEndPoint(IPAddress.Parse(serverIp), serverPort);
-
-                // 🔥 прием
-                new Thread(() => ReceiveUdpMessages(udpClient))
-                {
-                    IsBackground = true
-                }.Start();
-
-                // 🔥 heartbeat
-                new Thread(() => SendHeartbeatUdp(udpClient, serverEP))
-                {
-                    IsBackground = true
-                }.Start();
-
-                while (true)
-                {
-                    string message = Console.ReadLine();
-                    if (message?.ToLower() == "exit") break;
-
-                    SendMessageUdp(udpClient, serverEP, message);
-                }
-
-                udpClient.Close();
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"Ошибка UDP клиента: {ex.Message}");
-            }
-        }
-    }
-
-    // ================= HEARTBEAT =================
-
-    private static void SendHeartbeatTcp(NetworkStream stream)
-    {
-        try
-        {
-            while (true)
-            {
-                Thread.Sleep(5000);
-                byte[] data = Encoding.UTF8.GetBytes("PING");
-                stream.Write(data, 0, data.Length);
-            }
-        }
-        catch { }
-    }
-
-    private static void SendHeartbeatUdp(UdpClient client, IPEndPoint serverEP)
-    {
-        try
-        {
-            while (true)
-            {
-                Thread.Sleep(5000);
-                byte[] data = Encoding.UTF8.GetBytes("PING");
-                client.Send(data, data.Length, serverEP);
-            }
-        }
-        catch { }
+            StartUdp(ip, port, localPort);
     }
 
     // ================= TCP =================
 
-    private static void SendMessageTcp(NetworkStream stream, string message)
+    private static void StartTcp(string ip, int port, int localPort)
     {
         try
         {
-            byte[] data = Encoding.UTF8.GetBytes(message);
-            stream.Write(data, 0, data.Length);
+            TcpClient client = localPort == 0
+                ? new TcpClient(ip, port)
+                : new TcpClient(new IPEndPoint(IPAddress.Any, localPort));
 
-            PrintLocal("TCP", message);
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"Ошибка отправки TCP: {ex.Message}");
-        }
-    }
+            if (localPort != 0)
+                client.Connect(ip, port);
 
-    private static void ReceiveTcpMessages(NetworkStream stream)
-    {
-        try
-        {
-            byte[] buffer = new byte[1024];
+            var stream = client.GetStream();
+
+            new Thread(() => ReceiveTcp(stream)) { IsBackground = true }.Start();
+            new Thread(() => HeartbeatTcp(stream)) { IsBackground = true }.Start();
 
             while (true)
             {
-                int bytesRead = stream.Read(buffer, 0, buffer.Length);
-                if (bytesRead == 0) break;
+                string msg = Console.ReadLine();
+                if (msg?.ToLower() == "exit") break;
 
-                string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                SendTcp(stream, msg);
+            }
 
-                // ❗ игнор heartbeat
-                if (message == "PING" || message == "PONG")
-                    continue;
+            client.Close();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"TCP ошибка: {ex.Message}");
+        }
+    }
 
-                PrintReceived("TCP", message);
+    private static void SendTcp(NetworkStream stream, string message)
+    {
+        try
+        {
+            byte[] data = Encoding.UTF8.GetBytes(message + "\n");
+
+            lock (tcpSendLock)
+            {
+                stream.Write(data, 0, data.Length);
             }
         }
         catch (Exception ex)
         {
-            Logger.Log($"Ошибка при получении TCP: {ex.Message}");
+            Console.WriteLine($"Ошибка TCP отправки: {ex.Message}");
         }
+    }
+
+    private static void ReceiveTcp(NetworkStream stream)
+    {
+        try
+        {
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            while (true)
+            {
+                string msg = reader.ReadLine();
+                if (msg == null) break;
+
+                if (msg == "PING" || msg == "PONG")
+                    continue;
+
+                Console.WriteLine(msg);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка TCP приема: {ex.Message}");
+        }
+    }
+
+    private static void HeartbeatTcp(NetworkStream stream)
+    {
+        try
+        {
+            while (true)
+            {
+                Thread.Sleep(5000);
+
+                lock (tcpSendLock)
+                {
+                    byte[] data = Encoding.UTF8.GetBytes("PING\n");
+                    stream.Write(data, 0, data.Length);
+                }
+            }
+        }
+        catch { }
     }
 
     // ================= UDP =================
 
-    private static void SendMessageUdp(UdpClient client, IPEndPoint serverEP, string message)
+    private static void StartUdp(string ip, int port, int localPort)
+    {
+        try
+        {
+            UdpClient client = localPort == 0
+                ? new UdpClient(0)
+                : new UdpClient(localPort);
+
+            IPEndPoint serverEP = new IPEndPoint(IPAddress.Parse(ip), port);
+
+            // регистрация
+            SendUdp(client, serverEP, "HELLO");
+
+            new Thread(() => ReceiveUdp(client)) { IsBackground = true }.Start();
+            new Thread(() => HeartbeatUdp(client, serverEP)) { IsBackground = true }.Start();
+
+            while (true)
+            {
+                string msg = Console.ReadLine();
+                if (msg?.ToLower() == "exit") break;
+
+                SendUdp(client, serverEP, msg);
+            }
+
+            client.Close();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UDP ошибка: {ex.Message}");
+        }
+    }
+
+    private static void SendUdp(UdpClient client, IPEndPoint ep, string message)
     {
         try
         {
             byte[] data = Encoding.UTF8.GetBytes(message);
-            client.Send(data, data.Length, serverEP);
-
-            PrintLocal("UDP", message);
+            client.Send(data, data.Length, ep);
         }
         catch (Exception ex)
         {
-            Logger.Log($"Ошибка UDP отправки: {ex.Message}");
+            Console.WriteLine($"Ошибка UDP отправки: {ex.Message}");
         }
     }
 
-    private static void ReceiveUdpMessages(UdpClient client)
+    private static void ReceiveUdp(UdpClient client)
     {
         try
         {
-            IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
+            IPEndPoint remote = new IPEndPoint(IPAddress.Any, 0);
 
             while (true)
             {
-                byte[] data = client.Receive(ref remoteEP);
-                string message = Encoding.UTF8.GetString(data);
+                byte[] data = client.Receive(ref remote);
+                string msg = Encoding.UTF8.GetString(data);
 
-                // ❗ игнор heartbeat
-                if (message == "PING" || message == "PONG")
+                if (msg == "PING" || msg == "PONG")
                     continue;
 
-                PrintReceived("UDP", message);
+                Console.WriteLine(msg);
             }
         }
         catch (Exception ex)
         {
-            Logger.Log($"Ошибка при получении UDP: {ex.Message}");
+            Console.WriteLine($"Ошибка UDP приема: {ex.Message}");
         }
     }
 
-    // ================= ВЫВОД =================
-
-    private static void PrintLocal(string protocol, string message)
-    {
-        string timestamp = DateTime.Now.ToString("HH:mm:ss");
-        Console.WriteLine($"[{timestamp}] Вы ({protocol}): {message}");
-    }
-
-    private static void PrintReceived(string transport, string message)
+    private static void HeartbeatUdp(UdpClient client, IPEndPoint ep)
     {
         try
         {
-            int firstBracketEnd = message.IndexOf(']');
-            int secondBracketStart = message.IndexOf('[', firstBracketEnd + 1);
-            int secondBracketEnd = message.IndexOf(']', secondBracketStart + 1);
-
-            if (secondBracketStart == -1 || secondBracketEnd == -1)
-                return;
-
-            string source = message.Substring(
-                secondBracketStart + 1,
-                secondBracketEnd - secondBracketStart - 1);
-
-            string text = message.Substring(secondBracketEnd + 2);
-
-            string timestamp = DateTime.Now.ToString("HH:mm:ss");
-
-            Console.WriteLine($"[{timestamp}] {source} -> {transport}: {text}");
+            while (true)
+            {
+                Thread.Sleep(5000);
+                SendUdp(client, ep, "PING");
+            }
         }
-        catch
-        {
-            // игнор
-        }
+        catch { }
     }
 }
