@@ -61,8 +61,7 @@ class Client
 
             var stream = client.GetStream();
 
-            // 🔥 регистрация
-            SendTcp(stream, $"HELLO|{nickname}");
+            SendRawTcp(stream, $"HELLO|{nickname}");
 
             new Thread(() => ReceiveTcp(stream)) { IsBackground = true }.Start();
             new Thread(() => HeartbeatTcp(stream)) { IsBackground = true }.Start();
@@ -71,6 +70,13 @@ class Client
             {
                 string msg = Console.ReadLine();
                 if (msg?.ToLower() == "exit") break;
+
+                if (msg.StartsWith("spam"))
+                {
+                    int count = int.Parse(msg.Split(' ')[1]);
+                    new Thread(() => SpamTcp(stream, count)) { IsBackground = true }.Start();
+                    continue;
+                }
 
                 SendTcp(stream, msg);
             }
@@ -84,6 +90,13 @@ class Client
     }
 
     private static void SendTcp(NetworkStream stream, string message)
+    {
+        long ticks = DateTime.UtcNow.Ticks;
+        string payload = $"MSG|{ticks}|{message}";
+        SendRawTcp(stream, payload);
+    }
+
+    private static void SendRawTcp(NetworkStream stream, string message)
     {
         try
         {
@@ -114,7 +127,7 @@ class Client
                 if (msg == "PING" || msg == "PONG")
                     continue;
 
-                Console.WriteLine(msg);
+                HandleIncoming(msg);
             }
         }
         catch (Exception ex)
@@ -130,15 +143,19 @@ class Client
             while (true)
             {
                 Thread.Sleep(5000);
-
-                lock (tcpSendLock)
-                {
-                    byte[] data = Encoding.UTF8.GetBytes("PING\n");
-                    stream.Write(data, 0, data.Length);
-                }
+                SendRawTcp(stream, "PING");
             }
         }
         catch { }
+    }
+
+    private static void SpamTcp(NetworkStream stream, int count)
+    {
+        for (int i = 1; i <= count; i++)
+        {
+            SendTcp(stream, i.ToString());
+            Thread.Sleep(5);
+        }
     }
 
     // ================= UDP =================
@@ -153,8 +170,7 @@ class Client
 
             IPEndPoint serverEP = new IPEndPoint(IPAddress.Parse(ip), port);
 
-            // 🔥 регистрация
-            SendUdp(client, serverEP, $"HELLO|{nickname}");
+            SendRawUdp(client, serverEP, $"HELLO|{nickname}");
 
             new Thread(() => ReceiveUdp(client)) { IsBackground = true }.Start();
             new Thread(() => HeartbeatUdp(client, serverEP)) { IsBackground = true }.Start();
@@ -163,6 +179,13 @@ class Client
             {
                 string msg = Console.ReadLine();
                 if (msg?.ToLower() == "exit") break;
+
+                if (msg.StartsWith("spam"))
+                {
+                    int count = int.Parse(msg.Split(' ')[1]);
+                    new Thread(() => SpamUdp(client, serverEP, count)) { IsBackground = true }.Start();
+                    continue;
+                }
 
                 SendUdp(client, serverEP, msg);
             }
@@ -176,6 +199,13 @@ class Client
     }
 
     private static void SendUdp(UdpClient client, IPEndPoint ep, string message)
+    {
+        long ticks = DateTime.UtcNow.Ticks;
+        string payload = $"MSG|{ticks}|{message}";
+        SendRawUdp(client, ep, payload);
+    }
+
+    private static void SendRawUdp(UdpClient client, IPEndPoint ep, string message)
     {
         try
         {
@@ -202,21 +232,10 @@ class Client
                 if (msg == "PING" || msg == "PONG")
                     continue;
 
-                Console.WriteLine(msg);
+                HandleIncoming(msg);
             }
         }
-        catch (ObjectDisposedException)
-        {
-
-        }
-        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.Interrupted)
-        {
-
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Ошибка UDP приема: {ex.Message}");
-        }
+        catch { }
     }
 
     private static void HeartbeatUdp(UdpClient client, IPEndPoint ep)
@@ -226,9 +245,38 @@ class Client
             while (true)
             {
                 Thread.Sleep(5000);
-                SendUdp(client, ep, "PING");
+                SendRawUdp(client, ep, "PING");
             }
         }
         catch { }
+    }
+
+    private static void SpamUdp(UdpClient client, IPEndPoint ep, int count)
+    {
+        for (int i = 1; i <= count; i++)
+        {
+            SendUdp(client, ep, i.ToString());
+            Thread.Sleep(1);
+        }
+    }
+
+    // ================= ОБЩАЯ ОБРАБОТКА =================
+
+    private static void HandleIncoming(string msg)
+    {
+        if (msg.StartsWith("MSG|"))
+        {
+            var parts = msg.Split('|');
+            long sentTicks = long.Parse(parts[1]);
+            string text = parts[2];
+
+            double ms = new TimeSpan(DateTime.UtcNow.Ticks - sentTicks).TotalMilliseconds;
+
+            Console.WriteLine($"{text} (задержка: {ms:F2} ms)");
+        }
+        else
+        {
+            Console.WriteLine(msg);
+        }
     }
 }
