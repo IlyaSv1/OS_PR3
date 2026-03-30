@@ -3,12 +3,12 @@
   "WorkspaceRootPath": "C:\\Users\\IlyaS\\Downloads\\OS_PR3\\ChatApplication\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{5DD8C996-4620-4118-BBDD-C244E626ACDD}|ChatApplication\\ChatApplication.csproj|c:\\users\\ilyas\\downloads\\os_pr3\\chatapplication\\chatapplication\\client.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{5DD8C996-4620-4118-BBDD-C244E626ACDD}|ChatApplication\\ChatApplication.csproj|solutionrelative:chatapplication\\client.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{5DD8C996-4620-4118-BBDD-C244E626ACDD}|ChatApplication\\ChatApplication.csproj|c:\\users\\ilyas\\downloads\\os_pr3\\chatapplication\\chatapplication\\server.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{5DD8C996-4620-4118-BBDD-C244E626ACDD}|ChatApplication\\ChatApplication.csproj|solutionrelative:chatapplication\\server.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{5DD8C996-4620-4118-BBDD-C244E626ACDD}|ChatApplication\\ChatApplication.csproj|c:\\users\\ilyas\\downloads\\os_pr3\\chatapplication\\chatapplication\\client.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{5DD8C996-4620-4118-BBDD-C244E626ACDD}|ChatApplication\\ChatApplication.csproj|solutionrelative:chatapplication\\client.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{5DD8C996-4620-4118-BBDD-C244E626ACDD}|ChatApplication\\ChatApplication.csproj|c:\\users\\ilyas\\downloads\\os_pr3\\chatapplication\\chatapplication\\logger.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
@@ -26,7 +26,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 2,
+          "SelectedChildIndex": 1,
           "Children": [
             {
               "$type": "Document",
@@ -38,31 +38,30 @@
               "RelativeToolTip": "ChatApplication\\Logger.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAA8AAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-03-17T11:08:42.875Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-17T11:08:42.875Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 0,
               "Title": "Server.cs",
               "DocumentMoniker": "C:\\Users\\IlyaS\\Downloads\\OS_PR3\\ChatApplication\\ChatApplication\\Server.cs",
               "RelativeDocumentMoniker": "ChatApplication\\Server.cs",
               "ToolTip": "C:\\Users\\IlyaS\\Downloads\\OS_PR3\\ChatApplication\\ChatApplication\\Server.cs",
               "RelativeToolTip": "ChatApplication\\Server.cs",
-              "ViewState": "AgIAAKQAAAAAAAAAAAAwwLUAAAA9AAAAAAAAAA==",
+              "ViewState": "AgIAACIBAAAAAAAAAAAuwDMBAAAuAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-03-16T08:09:06.978Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 1,
               "Title": "Client.cs",
               "DocumentMoniker": "C:\\Users\\IlyaS\\Downloads\\OS_PR3\\ChatApplication\\ChatApplication\\Client.cs",
               "RelativeDocumentMoniker": "ChatApplication\\Client.cs",
-              "ToolTip": "C:\\Users\\IlyaS\\Downloads\\OS_PR3\\ChatApplication\\ChatApplication\\Client.cs",
-              "RelativeToolTip": "ChatApplication\\Client.cs",
-              "ViewState": "AgIAAGgAAAAAAAAAAAAwwHUAAAANAAAAAAAAAA==",
+              "ToolTip": "C:\\Users\\IlyaS\\Downloads\\OS_PR3\\ChatApplication\\ChatApplication\\Client.cs*",
+              "RelativeToolTip": "ChatApplication\\Client.cs*",
+              "ViewState": "AgIAAPIAAAAAAAAAAAAqwBkBAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-03-16T08:08:46.775Z",
               "EditorCaption": ""

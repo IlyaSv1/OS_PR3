@@ -7,10 +7,12 @@ class Server
     private static List<TcpClient> tcpClients = new();
     private static Dictionary<TcpClient, DateTime> tcpLastSeen = new();
     private static Dictionary<TcpClient, string> tcpNames = new();
+    private static Dictionary<TcpClient, int> tcpExpected = new();
 
     private static HashSet<IPEndPoint> udpClients = new();
     private static Dictionary<IPEndPoint, DateTime> udpLastSeen = new();
     private static Dictionary<IPEndPoint, string> udpNames = new();
+    private static Dictionary<IPEndPoint, int> udpExpected = new();
 
     private static readonly object tcpLock = new();
     private static readonly object udpLock = new();
@@ -72,6 +74,7 @@ class Server
                 {
                     tcpClients.Add(client);
                     tcpLastSeen[client] = DateTime.Now;
+                    tcpExpected[client] = 1;
                 }
 
                 new Thread(() => HandleTcp(client)) { IsBackground = true }.Start();
@@ -111,6 +114,7 @@ class Server
             tcpClients.Remove(client);
             tcpLastSeen.Remove(client);
             tcpNames.Remove(client);
+            tcpExpected.Remove(client);
         }
 
         client.Close();
@@ -141,7 +145,6 @@ class Server
     private static void ProcessMessage(string msg, string protocol,
         TcpClient tcp = null, IPEndPoint udp = null)
     {
-        // обновляем активность
         if (tcp != null)
         {
             lock (tcpLock)
@@ -154,6 +157,9 @@ class Server
             {
                 udpClients.Add(udp);
                 udpLastSeen[udp] = DateTime.Now;
+
+                if (!udpExpected.ContainsKey(udp))
+                    udpExpected[udp] = 1;
             }
         }
 
@@ -183,7 +189,7 @@ class Server
         if (msg == "PONG")
             return;
 
-        // ===== MSG с latency =====
+        // ===== MSG =====
         if (msg.StartsWith("MSG"))
         {
             var parts = msg.Split('|');
@@ -193,6 +199,34 @@ class Server
                 long ticks = long.Parse(parts[1]);
                 string text = parts[2];
 
+                int number;
+                bool isNumber = int.TryParse(text, out number);
+
+                // ===== ПРОВЕРКА ПРОПУСКОВ =====
+                if (isNumber)
+                {
+                    if (tcp != null)
+                    {
+                        int expected = tcpExpected[tcp];
+
+                        if (number != expected)
+                            Console.WriteLine($"❗ TCP ПРОПУСК: ожидали {expected}, получили {number}");
+
+                        tcpExpected[tcp] = number + 1;
+                    }
+
+                    if (udp != null)
+                    {
+                        int expected = udpExpected[udp];
+
+                        if (number != expected)
+                            Console.WriteLine($"❗ UDP ПРОПУСК: ожидали {expected}, получили {number}");
+
+                        udpExpected[udp] = number + 1;
+                    }
+                }
+
+                // ===== latency =====
                 long nowTicks = DateTime.UtcNow.Ticks;
                 double ms = (nowTicks - ticks) / 10000.0;
 
@@ -211,7 +245,6 @@ class Server
             }
         }
 
-        // fallback
         Console.WriteLine(msg);
     }
 
@@ -219,7 +252,6 @@ class Server
 
     private static void Broadcast(string msg, TcpClient senderTcp, IPEndPoint senderUdp)
     {
-        // TCP
         lock (tcpLock)
         {
             foreach (var c in tcpClients.ToList())
@@ -229,7 +261,6 @@ class Server
             }
         }
 
-        // UDP
         lock (udpLock)
         {
             foreach (var ep in udpClients.ToList())
@@ -271,6 +302,7 @@ class Server
                 udpClients.Remove(ep);
                 udpLastSeen.Remove(ep);
                 udpNames.Remove(ep);
+                udpExpected.Remove(ep);
             }
 
             Console.WriteLine($"UDP клиент удален {ep}");
@@ -305,9 +337,11 @@ class Server
                     if ((now - udpLastSeen[ep]).TotalSeconds > 15)
                     {
                         Console.WriteLine($"UDP timeout {ep}");
+
                         udpClients.Remove(ep);
                         udpLastSeen.Remove(ep);
                         udpNames.Remove(ep);
+                        udpExpected.Remove(ep);
                     }
                 }
             }
