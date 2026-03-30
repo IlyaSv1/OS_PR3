@@ -210,7 +210,7 @@ class Server
                         int expected = tcpExpected[tcp];
 
                         if (number != expected)
-                            Console.WriteLine($"❗ TCP ПРОПУСК: ожидали {expected}, получили {number}");
+                            Console.WriteLine($"! TCP ПРОПУСК: ожидали {expected}, получили {number}");
 
                         tcpExpected[tcp] = number + 1;
                     }
@@ -220,7 +220,7 @@ class Server
                         int expected = udpExpected[udp];
 
                         if (number != expected)
-                            Console.WriteLine($"❗ UDP ПРОПУСК: ожидали {expected}, получили {number}");
+                            Console.WriteLine($"! UDP ПРОПУСК: ожидали {expected}, получили {number}");
 
                         udpExpected[udp] = number + 1;
                     }
